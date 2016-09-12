@@ -18,9 +18,9 @@ def wavenetBlock(n_atrous_filters, atrous_filter_size, atrous_rate, n_conv_filte
 
 def get_basic_generative_model()
     input = Input(shape=(1, 4096, 1))
-    l1a, l1b = wavenetBlock(5, 2, 2, 5, 3) (input)
-    l2a, l2b = wavenetBlock(7, 2, 4, 5, 3) (l1a)
-    l3a, l3b = wavenetBlock(12, 2, 8, 5, 3) (l2a)
+    l1a, l1b = wavenetBlock(16, 2, 2, 5, 3) (input)
+    l2a, l2b = wavenetBlock(16, 2, 4, 5, 3) (l1a)
+    l3a, l3b = wavenetBlock(16, 2, 8, 5, 3) (l2a)
     l4 = merge([l1b, l2b, l3b], mode='sum')
     l5 = Lambda(relu)(l4)
     l6 = Convolution2D(1, 1, 1, activation='relu') (l5)
@@ -52,6 +52,7 @@ if __name__ == '__main__':
     n_examples = len(X)
     X = np.array(X).reshape(n_examples, 1, 4096, 1)
     y = np.array(y)
+    model = get_basic_generative_model()
     model.fit(X, y, verbose=1, nb_epoch=20, batch_size=64, validation_split=0.1)
     model.save('my_model.h5')
     # sample from model
@@ -64,4 +65,4 @@ if __name__ == '__main__':
         ampl_val_16 = (np.sign(ampl_val_8) * (1/256.0) * ((1 + 256.0)**abs(ampl_val_8) - 1)) * 2**15
         curr_sample_idx += 1
         new_audio[curr_sample_idx] = ampl_val_16
-   write('generated.wav', sr, new_audio.astype(np.int16)) 
+    write('generated.wav', sr, new_audio.astype(np.int16)) 
