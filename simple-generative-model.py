@@ -59,7 +59,7 @@ if __name__ == '__main__':
     new_audio = np.zeros((sr * 5)) # generate 5 seconds worth of audio
     curr_sample_idx = 4096
     while curr_sample_idx < new_audio.shape[0]:
-        predicted_val = np.argmax(model.predict(new_audio[:curr_sample_idx].reshape(1, 1, 4096, 1)).reshape(256)))
+        predicted_val = np.argmax(model.predict(new_audio[-4096:].reshape(1, 1, 4096, 1)).reshape(256)))
         ampl_val_8 = ((((predicted_val) / 255.0) - 0.5) * 2.0)
         ampl_val_16 = (np.sign(ampl_val_8) * (1/256.0) * ((1 + 256.0)**abs(ampl_val_8) - 1)) * 2**15
         curr_sample_idx += 1
