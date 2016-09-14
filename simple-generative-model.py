@@ -1,4 +1,5 @@
 import sys
+import time
 import numpy as np
 from keras.activations import relu
 from scipy.io.wavfile import read, write
@@ -24,11 +25,11 @@ def wavenetBlock(n_atrous_filters, atrous_filter_size, atrous_rate,
     return f
 
 
-def get_basic_generative_model():
-    input = Input(shape=(1, 4096, 1))
-    l1a, l1b = wavenetBlock(1, 2, 2, 1, 3)(input)
-    l2a, l2b = wavenetBlock(1, 2, 4, 1, 3)(l1a)
-    l3a, l3b = wavenetBlock(1, 2, 8, 1, 3)(l2a)
+def get_basic_generative_model(input_size):
+    input = Input(shape=(1, input_size, 1))
+    l1a, l1b = wavenetBlock(10, 5, 2, 1, 3)(input)
+    l2a, l2b = wavenetBlock(10, 5, 4, 1, 3)(l1a)
+    l3a, l3b = wavenetBlock(10, 5, 8, 1, 3)(l2a)
     l4 = merge([l1b, l2b, l3b], mode='sum')
     l5 = Lambda(relu)(l4)
     l6 = Convolution2D(1, 1, 1, activation='relu')(l5)
@@ -68,31 +69,33 @@ def frame_generator(sr, audio, frame_size, frame_shift):
 
 
 if __name__ == '__main__':
-    frame_size = 4096
-    frame_shift = 2048
+    n_epochs = 10
+    frame_size = 2048
+    frame_shift = 512
     sr_training, training_audio = get_audio('train.wav')
-    # training_audio = training_audio[:sr_training*600]
+    training_audio = training_audio[:sr_training*1200]
     sr_valid, valid_audio = get_audio('validate.wav')
-    # valid_audio = valid_audio[:sr_valid*600]
+    valid_audio = valid_audio[:sr_valid*60]
     assert sr_training == sr_valid, "Training, validation samplerate mismatch"
     n_training_examples = int((len(training_audio)-frame_size-1) / float(
         frame_shift))
     n_validation_examples = int((len(valid_audio)-frame_size-1) / float(
         frame_shift))
-    model = get_basic_generative_model()
+    model = get_basic_generative_model(frame_size)
     print 'Total training examples:', n_training_examples
     print 'Total validation examples:', n_validation_examples
     model.fit_generator(frame_generator(sr_training, training_audio,
                                         frame_size, frame_shift),
                         samples_per_epoch=n_training_examples,
-                        nb_epoch=10,
+                        nb_epoch=n_epochs,
                         validation_data=frame_generator(sr_valid, valid_audio,
                                                         frame_size, frame_shift
                                                         ),
                         nb_val_samples=n_validation_examples,
                         verbose=1)
     print 'Saving model...'
-    model.save('my_model.h5')
+    str_timestamp = str(int(time.time()))
+    model.save('models/model_'+str_timestamp+'_'+str(n_epochs)+'.h5')
     print 'Generating audio...'
     new_audio = np.zeros((sr_training * 3))
     curr_sample_idx = 0
@@ -110,5 +113,7 @@ if __name__ == '__main__':
         sys.stdout.write('Percent complete: ' + pc_str + '\r')
         sys.stdout.flush()
         curr_sample_idx += 1
-    write('generated.wav', sr_training, new_audio.astype(np.int16))
+    outfilepath = 'output/generated_'+str_timestamp+'.wav'
+    print 'Writing generated audio to:', outfilepath
+    write(outfilepath, sr_training, new_audio.astype(np.int16))
     print '\nDone!'
