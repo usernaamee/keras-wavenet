@@ -53,29 +53,35 @@ def get_audio(filename):
 
 def frame_generator(sr, audio, frame_size, frame_shift):
     audio_len = len(audio)
-    for i in range(0, audio_len-1, frame_shift):
-        frame = audio[i:i+frame_size]
-        if len(frame) < frame_size:
-            break
-        temp = audio[i+frame_size + 1]
-        target_val = int((np.sign(temp) * (np.log(1 + 256*abs(temp)) / (
-            np.log(1+256))) + 1)/2.0 * 255)
-        yield frame.reshape(1, 1, frame_size, 1), (np.eye(256)[target_val]).\
-            reshape(1, 256)
+    while 1:
+        for i in range(0, audio_len - frame_size - 1, frame_shift):
+            frame = audio[i:i+frame_size]
+            if len(frame) < frame_size:
+                break
+            if i + frame_size + 1 >= audio_len:
+                break
+            temp = audio[i + frame_size + 1]
+            target_val = int((np.sign(temp) * (np.log(1 + 256*abs(temp)) / (
+                np.log(1+256))) + 1)/2.0 * 255)
+            yield frame.reshape(1, 1, frame_size, 1), \
+                (np.eye(256)[target_val]).reshape(1, 256)
 
 
 if __name__ == '__main__':
     frame_size = 4096
     frame_shift = 2048
     sr_training, training_audio = get_audio('train.wav')
+    # training_audio = training_audio[:sr_training*600]
     sr_valid, valid_audio = get_audio('validate.wav')
+    # valid_audio = valid_audio[:sr_valid*600]
     assert sr_training == sr_valid, "Training, validation samplerate mismatch"
-    n_training_examples = int((len(training_audio)-1) / float(frame_shift))
-    n_validation_examples = int((len(valid_audio)-1) / float(frame_shift))
+    n_training_examples = int((len(training_audio)-frame_size-1) / float(
+        frame_shift))
+    n_validation_examples = int((len(valid_audio)-frame_size-1) / float(
+        frame_shift))
+    model = get_basic_generative_model()
     print 'Total training examples:', n_training_examples
     print 'Total validation examples:', n_validation_examples
-    model = get_basic_generative_model()
-    """
     model.fit_generator(frame_generator(sr_training, training_audio,
                                         frame_size, frame_shift),
                         samples_per_epoch=n_training_examples,
@@ -84,16 +90,6 @@ if __name__ == '__main__':
                                                         frame_size, frame_shift
                                                         ),
                         nb_val_samples=n_validation_examples,
-                        verbose=1)
-    """
-    model.fit_generator(frame_generator(sr_training, training_audio,
-                                        frame_size, frame_shift),
-                        samples_per_epoch=20,
-                        nb_epoch=10,
-                        validation_data=frame_generator(sr_valid, valid_audio,
-                                                        frame_size, frame_shift
-                                                        ),
-                        nb_val_samples=20,
                         verbose=1)
     print 'Saving model...'
     model.save('my_model.h5')
