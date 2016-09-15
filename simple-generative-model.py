@@ -27,17 +27,18 @@ def wavenetBlock(n_atrous_filters, atrous_filter_size, atrous_rate,
 
 def get_basic_generative_model(input_size):
     input = Input(shape=(input_size, 1))
-    l1a, l1b = wavenetBlock(64, 2, 2, 64, 3)(input)
-    l2a, l2b = wavenetBlock(128, 2, 4, 64, 3)(l1a)
+    l1a, l1b = wavenetBlock(128, 2, 2, 64, 3)(input)
+    l2a, l2b = wavenetBlock(256, 2, 4, 64, 3)(l1a)
     l3a, l3b = wavenetBlock(256, 2, 8, 64, 3)(l2a)
-    l4a, l4b = wavenetBlock(1024, 2, 16, 64, 3)(l3a)
-    l5 = merge([l1b, l2b, l3b, l4b], mode='sum')
-    l6 = Lambda(relu)(l5)
-    l7 = Convolution1D(1, 1, activation='relu')(l6)
-    l8 = Convolution1D(1, 1)(l7)
-    l9 = Flatten()(l8)
-    l10 = Dense(256, activation='softmax')(l9)
-    model = Model(input=input, output=l10)
+    l4a, l4b = wavenetBlock(512, 2, 16, 64, 3)(l3a)
+    l5a, l5b = wavenetBlock(1024, 2, 32, 64, 3)(l4a)
+    l6 = merge([l1b, l2b, l3b, l4b, l5b], mode='sum')
+    l7 = Lambda(relu)(l6)
+    l8 = Convolution1D(1, 1, activation='relu')(l7)
+    l9 = Convolution1D(1, 1)(l8)
+    l10 = Flatten()(l9)
+    l11 = Dense(256, activation='softmax')(l10)
+    model = Model(input=input, output=l11)
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
                   metrics=['accuracy'])
     model.summary()
@@ -53,8 +54,10 @@ def get_audio(filename):
     return sr, audio
 
 
-def frame_generator(sr, audio, frame_size, frame_shift):
+def frame_generator(sr, audio, frame_size, frame_shift, minibatch_size=10):
     audio_len = len(audio)
+    X = []
+    y = []
     while 1:
         for i in range(0, audio_len - frame_size - 1, frame_shift):
             frame = audio[i:i+frame_size]
@@ -65,8 +68,13 @@ def frame_generator(sr, audio, frame_size, frame_shift):
             temp = audio[i + frame_size + 1]
             target_val = int((np.sign(temp) * (np.log(1 + 256*abs(temp)) / (
                 np.log(1+256))) + 1)/2.0 * 255)
-            yield frame.reshape(1, frame_size, 1), \
-                (np.eye(256)[target_val]).reshape(1, 256)
+            X.append(frame.reshape(frame_size, 1))
+            y.append((np.eye(256)[target_val]))
+            if len(X) == minibatch_size:
+                yield np.array(X), np.array(y)
+                X = []
+                y = []
+
 
 
 if __name__ == '__main__':
@@ -87,7 +95,7 @@ if __name__ == '__main__':
     print 'Total validation examples:', n_validation_examples
     model.fit_generator(frame_generator(sr_training, training_audio,
                                         frame_size, frame_shift),
-                        samples_per_epoch=1000,
+                        samples_per_epoch=100,
                         nb_epoch=n_epochs,
                         validation_data=frame_generator(sr_valid, valid_audio,
                                                         frame_size, frame_shift
