@@ -1,39 +1,39 @@
 import sys
 import time
 import numpy as np
-from keras.activations import relu
 from scipy.io.wavfile import read, write
 from keras.models import Model, Sequential
 from keras.layers import Convolution1D, AtrousConvolution1D, Flatten, Dense, \
-    Input, Lambda, merge
+    Input, Lambda, merge, Activation
 
 
-def wavenetBlock(n_atrous_filters, atrous_filter_size, atrous_rate,
-                 n_conv_filters, conv_filter_size):
+def wavenetBlock(n_atrous_filters, atrous_filter_size, atrous_rate):
     def f(input):
-        l1 = AtrousConvolution1D(n_atrous_filters, atrous_filter_size,
+        residual = input
+        tanh_out = AtrousConvolution1D(n_atrous_filters, atrous_filter_size,
                                  atrous_rate=atrous_rate,
-                                 border_mode='same')(input)
-        l2a = Convolution1D(n_conv_filters, conv_filter_size,
-                            activation='tanh', border_mode='same')(l1)
-        l2b = Convolution1D(n_conv_filters, conv_filter_size,
-                            activation='sigmoid', border_mode='same')(l1)
-        l2 = merge([l2a, l2b], mode='mul')
-        l3 = Convolution1D(1, 1, activation='relu', border_mode='same')(l2)
-        l4 = merge([l3, input], mode='sum')
-        return l4, l3
+                                 border_mode='same',
+                                 activation='tanh')(input)
+        sigmoid_out = AtrousConvolution1D(n_atrous_filters, atrous_filter_size,
+                                 atrous_rate=atrous_rate,
+                                 border_mode='same',
+                                 activation='sigmoid')(input)
+        merged = merge([tanh_out, sigmoid_out], mode='mul')
+        skip_out = Convolution1D(1, 1, activation='relu', border_mode='same')(merged)
+        out = merge([skip_out, residual], mode='sum')
+        return out, skip_out
     return f
 
 
 def get_basic_generative_model(input_size):
     input = Input(shape=(input_size, 1))
-    l1a, l1b = wavenetBlock(64, 2, 2, 7, 3)(input)
-    l2a, l2b = wavenetBlock(128, 2, 4, 7, 3)(l1a)
-    l3a, l3b = wavenetBlock(256, 2, 8, 7, 3)(l2a)
-    l4a, l4b = wavenetBlock(512, 2, 16, 7, 3)(l3a)
-    l5a, l5b = wavenetBlock(1024, 2, 32, 7, 3)(l4a)
+    l1a, l1b = wavenetBlock(5, 2, 2)(input)
+    l2a, l2b = wavenetBlock(7, 2, 4)(l1a)
+    l3a, l3b = wavenetBlock(5, 2, 8)(l2a)
+    l4a, l4b = wavenetBlock(7, 2, 16)(l3a)
+    l5a, l5b = wavenetBlock(12, 2, 32)(l4a)
     l6 = merge([l1b, l2b, l3b, l4b, l5b], mode='sum')
-    l7 = Lambda(relu)(l6)
+    l7 = Activation('relu')(l6)
     l8 = Convolution1D(1, 1, activation='relu')(l7)
     l9 = Convolution1D(1, 1)(l8)
     l10 = Flatten()(l9)
@@ -54,7 +54,7 @@ def get_audio(filename):
     return sr, audio
 
 
-def frame_generator(sr, audio, frame_size, frame_shift, minibatch_size=100):
+def frame_generator(sr, audio, frame_size, frame_shift, minibatch_size=20):
     audio_len = len(audio)
     X = []
     y = []
