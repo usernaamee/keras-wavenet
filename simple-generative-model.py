@@ -27,11 +27,11 @@ def wavenetBlock(n_atrous_filters, atrous_filter_size, atrous_rate,
 
 def get_basic_generative_model(input_size):
     input = Input(shape=(input_size, 1))
-    l1a, l1b = wavenetBlock(128, 2, 2, 64, 3)(input)
-    l2a, l2b = wavenetBlock(256, 2, 4, 64, 3)(l1a)
-    l3a, l3b = wavenetBlock(256, 2, 8, 64, 3)(l2a)
-    l4a, l4b = wavenetBlock(512, 2, 16, 64, 3)(l3a)
-    l5a, l5b = wavenetBlock(1024, 2, 32, 64, 3)(l4a)
+    l1a, l1b = wavenetBlock(64, 2, 2, 7, 3)(input)
+    l2a, l2b = wavenetBlock(128, 2, 4, 7, 3)(l1a)
+    l3a, l3b = wavenetBlock(256, 2, 8, 7, 3)(l2a)
+    l4a, l4b = wavenetBlock(512, 2, 16, 7, 3)(l3a)
+    l5a, l5b = wavenetBlock(1024, 2, 32, 7, 3)(l4a)
     l6 = merge([l1b, l2b, l3b, l4b, l5b], mode='sum')
     l7 = Lambda(relu)(l6)
     l8 = Convolution1D(1, 1, activation='relu')(l7)
@@ -39,7 +39,7 @@ def get_basic_generative_model(input_size):
     l10 = Flatten()(l9)
     l11 = Dense(256, activation='softmax')(l10)
     model = Model(input=input, output=l11)
-    model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
+    model.compile(loss='categorical_crossentropy', optimizer='sgd',
                   metrics=['accuracy'])
     model.summary()
     return model
@@ -54,7 +54,7 @@ def get_audio(filename):
     return sr, audio
 
 
-def frame_generator(sr, audio, frame_size, frame_shift, minibatch_size=10):
+def frame_generator(sr, audio, frame_size, frame_shift, minibatch_size=100):
     audio_len = len(audio)
     X = []
     y = []
@@ -95,12 +95,12 @@ if __name__ == '__main__':
     print 'Total validation examples:', n_validation_examples
     model.fit_generator(frame_generator(sr_training, training_audio,
                                         frame_size, frame_shift),
-                        samples_per_epoch=100,
+                        samples_per_epoch=1000,
                         nb_epoch=n_epochs,
                         validation_data=frame_generator(sr_valid, valid_audio,
                                                         frame_size, frame_shift
                                                         ),
-                        nb_val_samples=100,
+                        nb_val_samples=1000,
                         verbose=1)
     print 'Saving model...'
     str_timestamp = str(int(time.time()))
