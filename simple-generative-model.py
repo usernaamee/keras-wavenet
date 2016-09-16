@@ -32,7 +32,7 @@ def get_basic_generative_model(input_size):
     A, B = wavenetBlock(64, 2, 2)(input_)
     skip_connections = [B]
     for i in range(20):
-        A, B = wavenetBlock(64, 2, (i+2)**2)(A)
+        A, B = wavenetBlock(64, 2, 2**((i+2)%9))(A)
         skip_connections.append(B)
     net = merge(skip_connections, mode='sum')
     net = Activation('relu')(net)
