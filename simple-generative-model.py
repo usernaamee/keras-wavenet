@@ -29,18 +29,18 @@ def wavenetBlock(n_atrous_filters, atrous_filter_size, atrous_rate):
 
 def get_basic_generative_model(input_size):
     input_ = Input(shape=(input_size, 1))
-    l1a, l1b = wavenetBlock(12, 2, 2)(input_)
-    l2a, l2b = wavenetBlock(16, 2, 4)(l1a)
-    l3a, l3b = wavenetBlock(24, 2, 8)(l2a)
-    l4a, l4b = wavenetBlock(32, 2, 16)(l3a)
-    l5a, l5b = wavenetBlock(40, 2, 32)(l4a)
-    l6 = merge([l1b, l2b, l3b, l4b, l5b], mode='sum')
-    l7 = Activation('relu')(l6)
-    l8 = Convolution1D(1, 1, activation='relu')(l7)
-    l9 = Convolution1D(1, 1)(l8)
-    l10 = Flatten()(l9)
-    l11 = Dense(256, activation='softmax')(l10)
-    model = Model(input=input_, output=l11)
+    A, B = wavenetBlock(64, 2, 2)(input_)
+    skip_connections = [B]
+    for i in range(20):
+        A, B = wavenetBlock(64, 2, (i+2)**2)(A)
+        skip_connections.append(B)
+    net = merge(skip_connections, mode='sum')
+    net = Activation('relu')(net)
+    net = Convolution1D(1, 1, activation='relu')(net)
+    net = Convolution1D(1, 1)(net)
+    net = Flatten()(net)
+    net = Dense(256, activation='softmax')(net)
+    model = Model(input=input_, output=net)
     model.compile(loss='categorical_crossentropy', optimizer='sgd',
                   metrics=['accuracy'])
     model.summary()
@@ -118,7 +118,7 @@ class SaveAudioCallback(Callback):
 
 
 if __name__ == '__main__':
-    n_epochs = 1000
+    n_epochs = 2000
     frame_size = 2048
     frame_shift = 128
     sr_training, training_audio = get_audio('train.wav')
@@ -137,7 +137,7 @@ if __name__ == '__main__':
     save_audio_clbk = SaveAudioCallback(100, sr_training, audio_context)
     validation_data_gen = frame_generator(sr_valid, valid_audio, frame_size, frame_shift)
     training_data_gen = frame_generator(sr_training, training_audio, frame_size, frame_shift)
-    model.fit_generator(training_data_gen, samples_per_epoch=3000, nb_epoch=n_epochs, validation_data=validation_data_gen,nb_val_samples=1000, verbose=1, callbacks=[save_audio_clbk])
+    model.fit_generator(training_data_gen, samples_per_epoch=3000, nb_epoch=n_epochs, validation_data=validation_data_gen,nb_val_samples=500, verbose=1, callbacks=[save_audio_clbk])
     print 'Saving model...'
     str_timestamp = str(int(time.time()))
     model.save('models/model_'+str_timestamp+'_'+str(n_epochs)+'.h5')
