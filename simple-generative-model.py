@@ -1,6 +1,8 @@
+import os
 import sys
 import time
 import numpy as np
+from keras.callbacks import Callback
 from scipy.io.wavfile import read, write
 from keras.models import Model, Sequential
 from keras.layers import Convolution1D, AtrousConvolution1D, Flatten, Dense, \
@@ -8,16 +10,16 @@ from keras.layers import Convolution1D, AtrousConvolution1D, Flatten, Dense, \
 
 
 def wavenetBlock(n_atrous_filters, atrous_filter_size, atrous_rate):
-    def f(input):
-        residual = input
+    def f(input_):
+        residual = input_
         tanh_out = AtrousConvolution1D(n_atrous_filters, atrous_filter_size,
-                                 atrous_rate=atrous_rate,
-                                 border_mode='same',
-                                 activation='tanh')(input)
+                                       atrous_rate=atrous_rate,
+                                       border_mode='same',
+                                       activation='tanh')(input_)
         sigmoid_out = AtrousConvolution1D(n_atrous_filters, atrous_filter_size,
-                                 atrous_rate=atrous_rate,
-                                 border_mode='same',
-                                 activation='sigmoid')(input)
+                                          atrous_rate=atrous_rate,
+                                          border_mode='same',
+                                          activation='sigmoid')(input_)
         merged = merge([tanh_out, sigmoid_out], mode='mul')
         skip_out = Convolution1D(1, 1, activation='relu', border_mode='same')(merged)
         out = merge([skip_out, residual], mode='sum')
@@ -26,19 +28,19 @@ def wavenetBlock(n_atrous_filters, atrous_filter_size, atrous_rate):
 
 
 def get_basic_generative_model(input_size):
-    input = Input(shape=(input_size, 1))
-    l1a, l1b = wavenetBlock(5, 2, 2)(input)
-    l2a, l2b = wavenetBlock(7, 2, 4)(l1a)
-    l3a, l3b = wavenetBlock(5, 2, 8)(l2a)
-    l4a, l4b = wavenetBlock(7, 2, 16)(l3a)
-    l5a, l5b = wavenetBlock(12, 2, 32)(l4a)
+    input_ = Input(shape=(input_size, 1))
+    l1a, l1b = wavenetBlock(12, 2, 2)(input_)
+    l2a, l2b = wavenetBlock(16, 2, 4)(l1a)
+    l3a, l3b = wavenetBlock(24, 2, 8)(l2a)
+    l4a, l4b = wavenetBlock(32, 2, 16)(l3a)
+    l5a, l5b = wavenetBlock(40, 2, 32)(l4a)
     l6 = merge([l1b, l2b, l3b, l4b, l5b], mode='sum')
     l7 = Activation('relu')(l6)
     l8 = Convolution1D(1, 1, activation='relu')(l7)
     l9 = Convolution1D(1, 1)(l8)
     l10 = Flatten()(l9)
     l11 = Dense(256, activation='softmax')(l10)
-    model = Model(input=input, output=l11)
+    model = Model(input=input_, output=l11)
     model.compile(loss='categorical_crossentropy', optimizer='sgd',
                   metrics=['accuracy'])
     model.summary()
@@ -76,6 +78,44 @@ def frame_generator(sr, audio, frame_size, frame_shift, minibatch_size=20):
                 y = []
 
 
+def get_audio_from_model(model, sr, duration, seed_audio):
+    print 'Generating audio...'
+    new_audio = np.zeros((sr * duration))
+    curr_sample_idx = 0
+    while curr_sample_idx < new_audio.shape[0]:
+        distribution = np.array(model.predict(seed_audio.reshape(1,
+                                                                 frame_size, 1)
+                                             ), dtype=float).reshape(256)
+        distribution /= distribution.sum().astype(float)
+        predicted_val = np.random.choice(range(256), p=distribution)
+        ampl_val_8 = ((((predicted_val) / 255.0) - 0.5) * 2.0)
+        ampl_val_16 = (np.sign(ampl_val_8) * (1/256.0) * ((1 + 256.0)**abs(
+            ampl_val_8) - 1)) * 2**15
+        new_audio[curr_sample_idx] = ampl_val_16
+        seed_audio[-1] = ampl_val_16
+        seed_audio[:-1] = seed_audio[1:]
+        pc_str = str(round(100*curr_sample_idx/float(new_audio.shape[0]), 2))
+        sys.stdout.write('Percent complete: ' + pc_str + '\r')
+        sys.stdout.flush()
+        curr_sample_idx += 1
+    print 'Audio generated.'
+    return new_audio.astype(np.int16)
+
+
+class SaveAudioCallback(Callback):
+    def __init__(self, ckpt_freq, sr, seed_audio):
+        super(SaveAudioCallback, self).__init__()
+        self.ckpt_freq = ckpt_freq
+        self.sr = sr
+        self.seed_audio = seed_audio
+
+    def on_epoch_end(self, epoch, logs={}):
+        if (epoch+1)%self.ckpt_freq==0:
+            ts = str(int(time.time()))
+            filepath = os.path.join('output/', 'ckpt_'+ts+'.wav')
+            audio = get_audio_from_model(self.model, self.sr, 0.5, self.seed_audio)
+            write(filepath, self.sr, audio)
+
 
 if __name__ == '__main__':
     n_epochs = 1000
@@ -93,39 +133,17 @@ if __name__ == '__main__':
     model = get_basic_generative_model(frame_size)
     print 'Total training examples:', n_training_examples
     print 'Total validation examples:', n_validation_examples
-    model.fit_generator(frame_generator(sr_training, training_audio,
-                                        frame_size, frame_shift),
-                        samples_per_epoch=1000,
-                        nb_epoch=n_epochs,
-                        validation_data=frame_generator(sr_valid, valid_audio,
-                                                        frame_size, frame_shift
-                                                        ),
-                        nb_val_samples=1000,
-                        verbose=1)
+    audio_context = valid_audio[:frame_size]
+    save_audio_clbk = SaveAudioCallback(100, sr_training, audio_context)
+    validation_data_gen = frame_generator(sr_valid, valid_audio, frame_size, frame_shift)
+    training_data_gen = frame_generator(sr_training, training_audio, frame_size, frame_shift)
+    model.fit_generator(training_data_gen, samples_per_epoch=3000, nb_epoch=n_epochs, validation_data=validation_data_gen,nb_val_samples=1000, verbose=1, callbacks=[save_audio_clbk])
     print 'Saving model...'
     str_timestamp = str(int(time.time()))
     model.save('models/model_'+str_timestamp+'_'+str(n_epochs)+'.h5')
     print 'Generating audio...'
-    new_audio = np.zeros((sr_training * 1))
-    curr_sample_idx = 0
-    audio_context = valid_audio[:frame_size]
-    while curr_sample_idx < new_audio.shape[0]:
-        distribution = np.array(model.predict(audio_context.
-                                reshape(1, frame_size, 1)), dtype=float
-                                ).reshape(256)
-        distribution /= distribution.sum().astype(float)
-        predicted_val = np.random.choice(range(256), p=distribution)
-        ampl_val_8 = ((((predicted_val) / 255.0) - 0.5) * 2.0)
-        ampl_val_16 = (np.sign(ampl_val_8) * (1/256.0) * ((1 + 256.0)**abs(
-            ampl_val_8) - 1)) * 2**15
-        new_audio[curr_sample_idx] = ampl_val_16
-        audio_context[-1] = ampl_val_16
-        audio_context[:-1] = audio_context[1:]
-        pc_str = str(round(100*curr_sample_idx/float(new_audio.shape[0]), 2))
-        sys.stdout.write('Percent complete: ' + pc_str + '\r')
-        sys.stdout.flush()
-        curr_sample_idx += 1
+    new_audio = get_audio_from_model(model, sr_training, 2, audio_context)
     outfilepath = 'output/generated_'+str_timestamp+'.wav'
     print 'Writing generated audio to:', outfilepath
-    write(outfilepath, sr_training, new_audio.astype(np.int16))
+    write(outfilepath, sr_training, new_audio)
     print '\nDone!'
