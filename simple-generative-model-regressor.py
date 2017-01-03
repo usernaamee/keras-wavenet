@@ -10,18 +10,20 @@ from keras.layers import Convolution2D, AtrousConvolution2D, Flatten, Dense, \
 
 def wavenetBlock(n_atrous_filters, atrous_filter_size, atrous_rate,
                  n_conv_filters, conv_filter_size):
-    def f(input):
-        l1 = AtrousConvolution2D(n_atrous_filters, atrous_filter_size, 1,
-                                 atrous_rate=(atrous_rate, 1),
-                                 border_mode='same')(input)
-        l2a = Convolution2D(n_conv_filters, conv_filter_size, 1,
-                            activation='tanh', border_mode='same')(l1)
-        l2b = Convolution2D(n_conv_filters, conv_filter_size, 1,
-                            activation='sigmoid', border_mode='same')(l1)
-        l2 = merge([l2a, l2b], mode='mul')
-        l3 = Convolution2D(1, 1, 1, activation='relu', border_mode='same')(l2)
-        l4 = merge([l3, input], mode='sum')
-        return l4, l3
+    def f(input_):
+        residual = input_
+        tanh_out = AtrousConvolution1D(n_atrous_filters, atrous_filter_size,
+                                       atrous_rate=atrous_rate,
+                                       border_mode='same',
+                                       activation='tanh')(input_)
+        sigmoid_out = AtrousConvolution1D(n_atrous_filters, atrous_filter_size,
+                                          atrous_rate=atrous_rate,
+                                          border_mode='same',
+                                          activation='sigmoid')(input_)
+        merged = merge([tanh_out, sigmoid_out], mode='mul')
+        skip_out = Convolution1D(1, 1, activation='relu', border_mode='same')(merged)
+        out = merge([skip_out, residual], mode='sum')
+        return out, skip_out
     return f
 
 
