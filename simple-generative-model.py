@@ -65,9 +65,9 @@ def frame_generator(sr, audio, frame_size, frame_shift, minibatch_size=20):
             frame = audio[i:i+frame_size]
             if len(frame) < frame_size:
                 break
-            if i + frame_size + 1 >= audio_len:
+            if i + frame_size >= audio_len:
                 break
-            temp = audio[i + frame_size + 1]
+            temp = audio[i + frame_size]
             target_val = int((np.sign(temp) * (np.log(1 + 256*abs(temp)) / (
                 np.log(1+256))) + 1)/2.0 * 255)
             X.append(frame.reshape(frame_size, 1))
