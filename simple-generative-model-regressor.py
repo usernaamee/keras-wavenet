@@ -106,8 +106,8 @@ if __name__ == '__main__':
                                                             1))
         ampl_val_16 = predicted_val * 2**15
         new_audio[curr_sample_idx] = ampl_val_16
-        audio_context[-1] = ampl_val_16
         audio_context[:-1] = audio_context[1:]
+        audio_context[-1] = ampl_val_16
         pc_str = str(round(100*curr_sample_idx/float(new_audio.shape[0]), 2))
         sys.stdout.write('Percent complete: ' + pc_str + '\r')
         sys.stdout.flush()
