@@ -92,8 +92,8 @@ def get_audio_from_model(model, sr, duration, seed_audio):
         ampl_val_16 = (np.sign(ampl_val_8) * (1/256.0) * ((1 + 256.0)**abs(
             ampl_val_8) - 1)) * 2**15
         new_audio[curr_sample_idx] = ampl_val_16
-        seed_audio[-1] = ampl_val_16
         seed_audio[:-1] = seed_audio[1:]
+        seed_audio[-1] = ampl_val_16
         pc_str = str(round(100*curr_sample_idx/float(new_audio.shape[0]), 2))
         sys.stdout.write('Percent complete: ' + pc_str + '\r')
         sys.stdout.flush()
