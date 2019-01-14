@@ -20,9 +20,9 @@ def wavenetBlock(n_atrous_filters, atrous_filter_size, atrous_rate):
                                           atrous_rate=atrous_rate,
                                           border_mode='same',
                                           activation='sigmoid')(input_)
-        merged = merge([tanh_out, sigmoid_out], mode='mul')
+        merged = keras.layers.Multiply()([tanh_out, sigmoid_out])
         skip_out = Convolution1D(1, 1, activation='relu', border_mode='same')(merged)
-        out = merge([skip_out, residual], mode='sum')
+        out = keras.layers.Add()([skip_out, residual])
         return out, skip_out
     return f
 
@@ -34,12 +34,12 @@ def get_basic_generative_model(input_size):
     for i in range(20):
         A, B = wavenetBlock(64, 2, 2**((i+2)%9))(A)
         skip_connections.append(B)
-    net = merge(skip_connections, mode='sum')
+    net = keras.layers.Add()(skip_connections)
     net = Activation('relu')(net)
     net = Convolution1D(1, 1, activation='relu')(net)
     net = Convolution1D(1, 1)(net)
     net = Flatten()(net)
-    net = Dense(256, activation='softmax')(net)
+    net = Dense(input_size, activation='softmax')(net)
     model = Model(input=input_, output=net)
     model.compile(loss='categorical_crossentropy', optimizer='sgd',
                   metrics=['accuracy'])
